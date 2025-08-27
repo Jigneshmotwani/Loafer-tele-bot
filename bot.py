@@ -3,13 +3,15 @@ import re
 import openai
 from langdetect import detect
 from telegram import Update
-from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
+from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
 
+# Load API keys from environment
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
-RENDER_URL = "https://loafer-tele-bot.onrender.com"
+RENDER_URL = os.environ.get("RENDER_URL", "https://loafer-tele-bot.onrender.com")
 
 openai.api_key = OPENAI_API_KEY
+
 LATIN_PATTERN = re.compile(r'^[A-Za-z0-9\s,.\'?!-]+$')
 
 def needs_translation(text: str) -> bool:
@@ -22,7 +24,6 @@ def needs_translation(text: str) -> bool:
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
-    print(f"Received: {text}") 
     if not text or update.message.from_user.is_bot:
         return
     if not needs_translation(text):
@@ -47,8 +48,16 @@ if __name__ == "__main__":
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
+    # Run webhook for Render free tier
+    PORT = int(os.environ.get("PORT", 5000))
+    WEBHOOK_PATH = f"/{TELEGRAM_TOKEN}"  # webhook path must match token
+    WEBHOOK_URL = f"{RENDER_URL}/{TELEGRAM_TOKEN}"
+
+    print(f"Running webhook on {WEBHOOK_URL}:{PORT}")
+
     app.run_webhook(
         listen="0.0.0.0",
-        port=int(os.environ.get("PORT", 5000)),
-        webhook_url=f"{RENDER_URL}/{TELEGRAM_TOKEN}"
+        port=PORT,
+        webhook_url=WEBHOOK_URL,
+        webhook_path=WEBHOOK_PATH,
     )
