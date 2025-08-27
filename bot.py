@@ -34,12 +34,14 @@ async def translate_text(text: str, retries: int = 2) -> str:
     prompt = f"Translate the following text into natural English, keeping the meaning intact:\n\n{text}"
     for attempt in range(retries + 1):
         try:
-            response = openai.ChatCompletion.create(
+            response = openai.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.3
             )
-            return response.choices[0].message.content.strip()
+            translation = response.choices[0].message.content
+
+            return translation
         except Exception as e:
             print(f"OpenAI API error on attempt {attempt + 1}: {e}")
             await asyncio.sleep(1)  # wait before retry
