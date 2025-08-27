@@ -1,6 +1,7 @@
 import os
 import re
 import openai
+import asyncio
 from langdetect import detect
 from telegram import Update, Bot
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
@@ -47,14 +48,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ Translation failed.")
 
 
-if __name__ == "__main__":
+async def main():
     print("Starting Telegram bot...")
 
-    # Set webhook automatically
+    # Set webhook asynchronously
     bot = Bot(token=TELEGRAM_TOKEN)
     webhook_url = f"{RENDER_URL}/{TELEGRAM_TOKEN}"
     try:
-        bot.set_webhook(webhook_url)
+        await bot.set_webhook(webhook_url)
         print(f"Webhook successfully set to {webhook_url}")
     except Exception as e:
         print(f"Failed to set webhook: {e}")
@@ -64,8 +65,11 @@ if __name__ == "__main__":
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     # Run webhook for Render
-    app.run_webhook(
+    await app.run_webhook(
         listen="0.0.0.0",
         port=int(os.environ.get("PORT", 5000)),
         webhook_url=webhook_url
     )
+
+if __name__ == "__main__":
+    asyncio.run(main())
