@@ -22,6 +22,7 @@ def needs_translation(text: str) -> bool:
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
+    print(f"Received: {text}") 
     if not text or update.message.from_user.is_bot:
         return
     if not needs_translation(text):
