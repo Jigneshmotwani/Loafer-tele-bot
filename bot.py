@@ -8,7 +8,7 @@ from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filte
 # Load API keys from environment variables (set these in Render)
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
-RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL")  # Render service URL
+RENDER_URL = "https://loafer-tele-bot.onrender.com"
 
 openai.api_key = OPENAI_API_KEY
 
@@ -27,6 +27,7 @@ def needs_translation(text: str) -> bool:
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
+    print(f"Received message: {text} from {update.message.from_user.username}")
     if not text or update.message.from_user.is_bot:
         return
 
