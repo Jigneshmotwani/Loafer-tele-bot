@@ -1,29 +1,39 @@
 import os
+import re
 import openai
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
 from langdetect import detect, DetectorFactory
 
-# Fix randomness in langdetect
-DetectorFactory.seed = 0
+DetectorFactory.seed = 0  # Fix langdetect randomness
 
-# Load tokens from environment
+# Load tokens
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 openai.api_key = OPENAI_API_KEY
 
+# Regex pattern to detect typical non-English Latin words (Hindi/Urdu transliteration)
+NON_ENGLISH_LATIN_PATTERN = re.compile(
+    r"\b(ka|ke|ki|ho|hai|tum|kya|main|hum|aap|rahe|rahi|tha|thi|hai|hoon|ho)\b", re.IGNORECASE
+)
+
 def is_latin_non_english(text: str) -> bool:
     """
-    Returns True if text is written in Latin letters but is not English.
+    Returns True if text is in Latin letters but likely not English.
     """
     try:
         lang = detect(text)
-        if lang != "en":
-            # Check if all characters are ASCII letters, spaces, or punctuation
-            if all(ord(c) < 128 for c in text):
-                return True
     except:
-        pass
+        return False
+
+    # ASCII check: only Latin letters, numbers, spaces, punctuation
+    if not all(ord(c) < 128 for c in text):
+        return False
+
+    # Only translate if detected language is not English OR matches our non-English Latin regex
+    if lang != "en" or NON_ENGLISH_LATIN_PATTERN.search(text):
+        return True
+
     return False
 
 async def translate_with_openai(text: str) -> str:
