@@ -48,16 +48,15 @@ if __name__ == "__main__":
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Run webhook for Render free tier
     PORT = int(os.environ.get("PORT", 5000))
-    WEBHOOK_PATH = f"/{TELEGRAM_TOKEN}"  # webhook path must match token
-    WEBHOOK_URL = f"{RENDER_URL}/{TELEGRAM_TOKEN}"
+    WEBHOOK_URL = f"{RENDER_URL}/{TELEGRAM_TOKEN}"  # full URL with token as path
 
     print(f"Running webhook on {WEBHOOK_URL}:{PORT}")
 
+    # just use webhook_url, no webhook_path
     app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
-        webhook_url=WEBHOOK_URL,
-        webhook_path=WEBHOOK_PATH,
+        webhook_url=WEBHOOK_URL
     )
+
