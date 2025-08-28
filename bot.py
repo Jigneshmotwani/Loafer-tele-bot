@@ -4,11 +4,14 @@ import openai
 import asyncio
 from langdetect import detect
 from telegram import Update
-from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
+from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters, CommandHandler
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Load API keys from environment variables
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
 if not OPENAI_API_KEY or not TELEGRAM_TOKEN:
     raise RuntimeError("OPENAI_API_KEY or TELEGRAM_TOKEN not set in environment")
@@ -117,13 +120,27 @@ def main():
     application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     
     # Add handlers
-    application.add_handler(MessageHandler(filters.COMMAND & filters.Regex("^/start"), start_command))
-    application.add_handler(MessageHandler(filters.COMMAND & filters.Regex("^/help"), help_command))
+    application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("help", help_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    # Start polling
-    print("Bot is running... Press Ctrl+C to stop")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    # Get webhook configuration
+    WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+    PORT = int(os.getenv("PORT", 5000))
+    
+    if WEBHOOK_URL:
+        # Use webhooks for production
+        print(f"Starting bot with webhook at {WEBHOOK_URL}")
+        application.run_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            url_path="",
+            webhook_url=WEBHOOK_URL
+        )
+    else:
+        # Use polling for development
+        print("Starting bot with polling (set WEBHOOK_URL for production)")
+        application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
     main()
