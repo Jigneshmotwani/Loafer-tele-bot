@@ -32,6 +32,10 @@ import time
 last_api_call = {}
 rate_limit_lock = threading.Lock()
 
+# Model fallback tracking
+current_model_index = 0  # 0=GPT-4o-mini, 1=GPT-4o-mini-1, 2=GPT-3.5-turbo
+model_fallback_lock = threading.Lock()
+
 # Regex to check if text is Latin letters only (ignores emojis, numbers, etc.)
 LATIN_PATTERN = re.compile(r'^[A-Za-z0-9\s,.\'?!-]+$')
 
@@ -133,16 +137,21 @@ async def translate_text_parallel(text: str, chat_id: str, retries: int = 2) -> 
     
     for attempt in range(retries + 1):
         try:
+                        # Choose model based on fallback status
+            with model_fallback_lock:
+                models = ["gpt-4o-mini", "gpt-4.1-mini", "gpt-4o-mini-1", "gpt-3.5-turbo"]
+                model_to_use = models[current_model_index]
+            
             # Execute API call in thread pool
             response = await loop.run_in_executor(
-            executor,
-            lambda: client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=messages,
-                temperature=0.1,
-                max_tokens=1000
+                executor,
+                lambda: openai.chat.completions.create(
+                    model=model_to_use,
+                    messages=messages,
+                    temperature=0.1,
+                    max_tokens=1000
+                )
             )
-        )
             
             result = response.choices[0].message.content.strip()
             
@@ -166,9 +175,26 @@ async def translate_text_parallel(text: str, chat_id: str, retries: int = 2) -> 
             
             # Handle rate limit specifically
             if "rate_limit" in error_msg.lower() or "429" in error_msg:
-                wait_time = 20 + (attempt * 10)  # 20s, 30s, 40s
-                print(f"Chat {chat_id}: Rate limit hit, waiting {wait_time}s")
-                await asyncio.sleep(wait_time)
+                if "requests per day" in error_msg.lower() or "rpd" in error_msg.lower():
+                    # Daily rate limit hit - switch to next fallback model
+                    with model_fallback_lock:
+                        if current_model_index < 2:  # Still have fallback models
+                            current_model_index += 1
+                            next_model = ["gpt-4o-mini", "gpt-4o-mini-1", "gpt-3.5-turbo"][current_model_index]
+                            print(f"Chat {chat_id}: DAILY rate limit hit! Switching to {next_model} fallback.")
+                            continue
+                        else:
+                            # All models exhausted, wait 1 hour
+                            wait_time = 60 * 60
+                            print(f"Chat {chat_id}: ALL models hit daily limits! Waiting 1 hour.")
+                            await asyncio.sleep(wait_time)
+                            current_model_index = 0  # Reset to first model
+                            continue
+                else:
+                    # Per-minute rate limit
+                    wait_time = 20 + (attempt * 10)  # 20s, 30s, 40s
+                    print(f"Chat {chat_id}: Per-minute rate limit hit, waiting {wait_time}s")
+                    await asyncio.sleep(wait_time)
             elif attempt < retries:
                 await asyncio.sleep(1 + attempt)  # Progressive backoff
             else:
