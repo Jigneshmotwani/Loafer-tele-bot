@@ -21,11 +21,16 @@ if not OPENAI_API_KEY or not TELEGRAM_TOKEN:
 openai.api_key = OPENAI_API_KEY
 
 # Global thread pool for parallel processing
-executor = ThreadPoolExecutor(max_workers=10)
+executor = ThreadPoolExecutor(max_workers=5)  # Reduced from 10 to 5
 
 # Conversation memory to avoid sending instructions repeatedly
 conversation_memory = {}
 memory_lock = threading.Lock()
+
+# Rate limiting
+import time
+last_api_call = {}
+rate_limit_lock = threading.Lock()
 
 # Regex to check if text is Latin letters only (ignores emojis, numbers, etc.)
 LATIN_PATTERN = re.compile(r'^[A-Za-z0-9\s,.\'?!-]+$')
@@ -112,6 +117,17 @@ Remember: Never translate "NO_TRANSLATION" - it's a special response code."""
 async def translate_text_parallel(text: str, chat_id: str, retries: int = 2) -> str:
     """Call OpenAI API to translate text with conversation memory and parallel processing."""
     
+    # Rate limiting - ensure minimum 3 seconds between API calls
+    with rate_limit_lock:
+        current_time = time.time()
+        if chat_id in last_api_call:
+            time_since_last = current_time - last_api_call[chat_id]
+            if time_since_last < 3:  # 3 seconds minimum between calls
+                wait_time = 3 - time_since_last
+                print(f"Chat {chat_id}: Rate limiting, waiting {wait_time:.1f}s")
+                await asyncio.sleep(wait_time)
+        last_api_call[chat_id] = time.time()
+    
     # Get conversation history
     messages = get_conversation_messages(chat_id)
     
@@ -151,9 +167,16 @@ async def translate_text_parallel(text: str, chat_id: str, retries: int = 2) -> 
                 return result
                 
         except Exception as e:
-            print(f"Chat {chat_id}: OpenAI API error on attempt {attempt + 1}: {e}")
-            if attempt < retries:
-                await asyncio.sleep(0.3)
+            error_msg = str(e)
+            print(f"Chat {chat_id}: OpenAI API error on attempt {attempt + 1}: {error_msg}")
+            
+            # Handle rate limit specifically
+            if "rate_limit" in error_msg.lower() or "429" in error_msg:
+                wait_time = 20 + (attempt * 10)  # 20s, 30s, 40s
+                print(f"Chat {chat_id}: Rate limit hit, waiting {wait_time}s")
+                await asyncio.sleep(wait_time)
+            elif attempt < retries:
+                await asyncio.sleep(1 + attempt)  # Progressive backoff
             else:
                 print(f"Chat {chat_id}: All translation attempts failed")
     return None
