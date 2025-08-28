@@ -141,14 +141,14 @@ async def translate_text_parallel(text: str, chat_id: str, retries: int = 2) -> 
         try:
             # Execute API call in thread pool
             response = await loop.run_in_executor(
-                executor,
-                lambda: openai.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=messages,
-                    temperature=0.1,
-                    max_tokens=1000
-                )
+            executor,
+            lambda: client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages,
+                temperature=0.1,
+                max_tokens=1000
             )
+        )
             
             result = response.choices[0].message.content.strip()
             
