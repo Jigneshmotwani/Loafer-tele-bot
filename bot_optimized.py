@@ -124,7 +124,18 @@ Output: "Good morning ☀️"
 Remember: Never translate "NO_TRANSLATION" - it's a special response code."""
                 }
             ]
-        return conversation_memory[chat_id]
+        # For backward compatibility, check if it's the old format
+        if isinstance(conversation_memory[chat_id], list):
+            # Convert old format to new format
+            conversation_memory[chat_id] = {
+                'messages': conversation_memory[chat_id],
+                'last_used': time.time()
+            }
+        else:
+            # Update last used time for existing conversations
+            conversation_memory[chat_id]['last_used'] = time.time()
+            
+        return conversation_memory[chat_id]['messages']
 
 async def translate_text_parallel(text: str, chat_id: str, retries: int = 2) -> str:
     """Call OpenAI API to translate text with conversation memory and parallel processing."""
@@ -172,6 +183,11 @@ async def translate_text_parallel(text: str, chat_id: str, retries: int = 2) -> 
             
             # Add assistant response to conversation history
             messages.append({"role": "assistant", "content": result})
+            
+            # Update conversation memory with new messages
+            with memory_lock:
+                conversation_memory[chat_id]['messages'] = messages
+                conversation_memory[chat_id]['last_used'] = time.time()
             
             # Keep conversation history manageable (last 10 messages)
             if len(messages) > 11:  # system + 10 exchanges
