@@ -76,6 +76,7 @@ Rules for your behavior:
    - ignore short forms of words like "lol", "asap", "fifa", "nasa", "etc."
    
 DO NOT DO LITERAL TRANSLATION. IDENTIFY NAMES OF PEOPLE, PLACES, BRANDS, SONGS, ETC. AND DO NOT TRANSLATE THEM.
+REMEMBER TO NOT REPLY TEXTS WHICH ARE IN ENGLISH. ALSO DO NOT FIX TYPOS GRAMMER OR ANYTHING ELSE.
 
 Examples:
 
@@ -143,10 +144,10 @@ async def translate_text_parallel(text: str, chat_id: str, retries: int = 2) -> 
             response = await loop.run_in_executor(
                 executor,
                 lambda: openai.chat.completions.create(
-                    model="gpt-4o-mini",
+                    model="gpt-4.1-mini",
                     messages=messages,
                     temperature=0.1,
-                    max_tokens=1000
+                    max_tokens=100
                 )
             )
             
