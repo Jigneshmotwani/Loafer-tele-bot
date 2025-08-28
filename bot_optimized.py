@@ -127,10 +127,10 @@ async def translate_text_parallel(text: str, chat_id: str, retries: int = 2) -> 
             response = await loop.run_in_executor(
                 executor,
                 lambda: openai.chat.completions.create(
-                    model="gpt-3.5-turbo",
+                    model="gpt-4o-mini",
                     messages=messages,
                     temperature=0.1,
-                    max_tokens=100
+                    max_tokens=1000
                 )
             )
             
