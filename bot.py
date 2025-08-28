@@ -35,17 +35,12 @@ def needs_translation(text: str) -> bool:
 
 async def translate_text(text: str, retries: int = 2) -> str:
     """Call OpenAI API to translate text or return None if no translation needed."""
-    prompt = f"""Analyze this text and decide if it needs translation to English.
+    prompt = f"""Is this text in English or another language? 
 
-If the text is already in English or doesn't need translation, respond with exactly: "NO_TRANSLATION_NEEDED"
+Text: "{text}"
 
-If the text is in another language and needs translation, translate it to natural English.
-
-Text: {text}
-
-Respond with either:
-- "NO_TRANSLATION_NEEDED" if no translation is needed
-- The English translation if translation is needed"""
+If it's already in English, respond with: NO_TRANSLATION
+If it's in another language, translate it to English."""
 
     for attempt in range(retries + 1):
         try:
@@ -57,7 +52,7 @@ Respond with either:
             )
             result = response.choices[0].message.content.strip()
             
-            if result == "NO_TRANSLATION_NEEDED":
+            if result.strip().upper() == "NO_TRANSLATION":
                 print("OpenAI determined no translation needed")
                 return None
             else:
