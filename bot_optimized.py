@@ -2,7 +2,6 @@ import os
 import re
 import openai
 import asyncio
-from langdetect import detect
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters, CommandHandler
 from dotenv import load_dotenv
@@ -33,15 +32,30 @@ last_api_call = {}
 rate_limit_lock = threading.Lock()
 
 # Model fallback tracking
-current_model_index = 0  # 0=GPT-4o-mini, 1=GPT-4o-mini-1, 2=GPT-3.5-turbo
+current_model_index = 0  # 0=GPT-4o-mini, 1=GPT-4.1-mini, 2=GPT-4o-mini-1, 3=GPT-3.5-turbo
 model_fallback_lock = threading.Lock()
 
-# Regex to check if text is Latin letters only (ignores emojis, numbers, etc.)
-LATIN_PATTERN = re.compile(r'^[A-Za-z0-9\s,.\'?!-]+$')
+def cleanup_old_memory():
+    """Clean up old conversation memory to prevent memory leaks."""
+    with memory_lock:
+        current_time = time.time()
+        to_remove = []
+        for chat_id in conversation_memory:
+            # Remove conversations older than 1 hour (3600 seconds)
+            if current_time - conversation_memory[chat_id].get('last_used', 0) > 3600:
+                to_remove.append(chat_id)
+        
+        for chat_id in to_remove:
+            del conversation_memory[chat_id]
+            print(f"Cleaned up old memory for chat {chat_id}")
 
 def get_conversation_messages(chat_id: str) -> list:
     """Get or create conversation messages for a chat."""
     with memory_lock:
+        # Clean up old memory periodically
+        if len(conversation_memory) > 100:  # Clean when we have many chats
+            cleanup_old_memory()
+            
         if chat_id not in conversation_memory:
             # Initialize conversation with system instruction
             conversation_memory[chat_id] = [
@@ -141,6 +155,7 @@ async def translate_text_parallel(text: str, chat_id: str, retries: int = 2) -> 
             with model_fallback_lock:
                 models = ["gpt-4o-mini", "gpt-4.1-mini", "gpt-4o-mini-1", "gpt-3.5-turbo"]
                 model_to_use = models[current_model_index]
+                current_index = current_model_index  # Store current index
             
             # Execute API call in thread pool
             response = await loop.run_in_executor(
@@ -160,7 +175,9 @@ async def translate_text_parallel(text: str, chat_id: str, retries: int = 2) -> 
             
             # Keep conversation history manageable (last 10 messages)
             if len(messages) > 11:  # system + 10 exchanges
-                messages[1:] = messages[-10:]  # Keep system message + last 10 exchanges
+                # Keep system message + last 10 exchanges
+                system_msg = messages[0]
+                messages = [system_msg] + messages[-10:]
             
             if result.strip().upper() == "NO_TRANSLATION":
                 print(f"Chat {chat_id}: No translation needed")
@@ -178,9 +195,10 @@ async def translate_text_parallel(text: str, chat_id: str, retries: int = 2) -> 
                 if "requests per day" in error_msg.lower() or "rpd" in error_msg.lower():
                     # Daily rate limit hit - switch to next fallback model
                     with model_fallback_lock:
-                        if current_model_index < 2:  # Still have fallback models
+                        if current_model_index < 3:  # Still have fallback models (4 total models: 0,1,2,3)
                             current_model_index += 1
-                            next_model = ["gpt-4o-mini", "gpt-4o-mini-1", "gpt-3.5-turbo"][current_model_index]
+                            models = ["gpt-4o-mini", "gpt-4.1-mini", "gpt-4o-mini-1", "gpt-3.5-turbo"]
+                            next_model = models[current_model_index]
                             print(f"Chat {chat_id}: DAILY rate limit hit! Switching to {next_model} fallback.")
                             continue
                         else:
@@ -195,6 +213,14 @@ async def translate_text_parallel(text: str, chat_id: str, retries: int = 2) -> 
                     wait_time = 20 + (attempt * 10)  # 20s, 30s, 40s
                     print(f"Chat {chat_id}: Per-minute rate limit hit, waiting {wait_time}s")
                     await asyncio.sleep(wait_time)
+            elif "quota" in error_msg.lower() or "billing" in error_msg.lower():
+                # Billing/quota issues
+                print(f"Chat {chat_id}: Billing/quota issue: {error_msg}")
+                return None
+            elif "invalid_api_key" in error_msg.lower():
+                # API key issues
+                print(f"Chat {chat_id}: Invalid API key")
+                return None
             elif attempt < retries:
                 await asyncio.sleep(1 + attempt)  # Progressive backoff
             else:
