@@ -2,6 +2,7 @@ import os
 import re
 import openai
 import asyncio
+from langdetect import detect
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters, CommandHandler
 from dotenv import load_dotenv
@@ -31,61 +32,48 @@ import time
 last_api_call = {}
 rate_limit_lock = threading.Lock()
 
-# Model fallback tracking
-current_model_index = 0  # 0=GPT-4o-mini, 1=GPT-4.1-mini, 2=GPT-4o-mini-1, 3=GPT-3.5-turbo
-model_fallback_lock = threading.Lock()
-
-def cleanup_old_memory():
-    """Clean up old conversation memory to prevent memory leaks."""
-    with memory_lock:
-        current_time = time.time()
-        to_remove = []
-        for chat_id in conversation_memory:
-            # Remove conversations older than 1 hour (3600 seconds)
-            if current_time - conversation_memory[chat_id].get('last_used', 0) > 3600:
-                to_remove.append(chat_id)
-        
-        for chat_id in to_remove:
-            del conversation_memory[chat_id]
-            print(f"Cleaned up old memory for chat {chat_id}")
+# Regex to check if text is Latin letters only (ignores emojis, numbers, etc.)
+LATIN_PATTERN = re.compile(r'^[A-Za-z0-9\s,.\'?!-]+$')
 
 def get_conversation_messages(chat_id: str) -> list:
     """Get or create conversation messages for a chat."""
     with memory_lock:
-        # Clean up old memory periodically
-        if len(conversation_memory) > 100:  # Clean when we have many chats
-            cleanup_old_memory()
-            
         if chat_id not in conversation_memory:
             # Initialize conversation with system instruction
             conversation_memory[chat_id] = [
                 {
                     "role": "system",
-                    "content": """You are a translation assistant. 
-Your ONLY job is to detect if the input needs translation into English. 
-Do NOT rewrite, correct, or "improve" English text. 
+                    "content": """You are a translation assistant. Your task is to analyze text and decide whether it needs translation to English.
 
-Rules:
+Rules for your behavior:
 
-1. NO TRANSLATION:
-   - If the text is already in English, even if it's slang, shorthand, typos, or informal ("u", "msg", "k", "jus"), respond with: NO_TRANSLATION
-   - If the text is a mix of English words and symbols/emojis, respond with: NO_TRANSLATION
-   - If it’s 1–2 common words (like "Hola", "Merci", "Ciao", "Adios", "Danke"), respond with: NO_TRANSLATION
-   - Proper nouns (names, brands, places, songs) = NO_TRANSLATION
-   - Gibberish, random characters, acronyms (LOL, ASAP, FIFA) = NO_TRANSLATION
+1. DO NOT TRANSLATE IF UNNECESSARY
+   - If the text is already in English, respond with: NO_TRANSLATION
+   - If the text is only 1–2 common words that most English speakers understand (like "Hola", "Merci", "Ciao", "Adios", "Danke"), respond with: NO_TRANSLATION
+   - If the text is a proper noun (names of people, places, brands, songs, etc.) and does not require translation, respond with: NO_TRANSLATION
+   - If the text contains mostly emojis or symbols and little/no real words, respond with: NO_TRANSLATION
 
-2. TRANSLATION:
-   - If the text is mostly in a NON-ENGLISH language, provide a natural English translation.
-   - Preserve tone and intent, don’t translate names/brands.
+2. TRANSLATE WHEN NEEDED
+   - If the text is written in a foreign language (non-English) and has enough meaning that an English speaker would benefit from a translation, provide a natural and fluent English translation.
+   - Preserve context and meaning. Do not translate word-for-word if it sounds unnatural. Prioritize readability.
 
-3. MIXED CASE:
-   - If the sentence mixes English + another language, only translate the non-English parts. 
-   - Example: "Anutham: okay jus hindi" → "Anutham: okay jus Hindi"
+3. MIXED-LANGUAGE TEXT
+   - If a sentence mixes English and another language, only translate the non-English parts and provide a natural English equivalent of the full sentence.
+   - Example: "Estoy happy today" → "I am happy today"
 
-4. OUTPUT FORMAT:
-   - If no translation is needed → respond ONLY with: NO_TRANSLATION
-   - If translation is needed → respond ONLY with the translated English text. 
-   - Never rewrite or clean up English. Never fix grammar or spelling.
+4. KEEP TONE AND INTENT
+   - If the original is polite, casual, or formal, reflect that in English.
+   - Do not add explanations, only the clean translation.
+
+5. OUTPUT FORMAT
+   - If no translation is needed → respond only with: NO_TRANSLATION
+   - If translation is needed → respond only with the translated text in English. Do not include the original text, do not include commentary.
+
+6. SPECIAL CASES
+   - If the text is just random characters, gibberish, or too ambiguous, treat it as NO_TRANSLATION.
+   - If it's an acronym that is widely understood in English (LOL, ASAP, FIFA, NASA), treat it as NO_TRANSLATION.
+   - If the text is a single borrowed word that is identical or nearly identical in English (pizza, taxi, internet), treat it as NO_TRANSLATION.
+   - ignore short forms of words like "lol", "asap", "fifa", "nasa", "etc."
    
 DO NOT DO LITERAL TRANSLATION. IDENTIFY NAMES OF PEOPLE, PLACES, BRANDS, SONGS, ETC. AND DO NOT TRANSLATE THEM.
 
@@ -124,18 +112,7 @@ Output: "Good morning ☀️"
 Remember: Never translate "NO_TRANSLATION" - it's a special response code."""
                 }
             ]
-        # For backward compatibility, check if it's the old format
-        if isinstance(conversation_memory[chat_id], list):
-            # Convert old format to new format
-            conversation_memory[chat_id] = {
-                'messages': conversation_memory[chat_id],
-                'last_used': time.time()
-            }
-        else:
-            # Update last used time for existing conversations
-            conversation_memory[chat_id]['last_used'] = time.time()
-            
-        return conversation_memory[chat_id]['messages']
+        return conversation_memory[chat_id]
 
 async def translate_text_parallel(text: str, chat_id: str, retries: int = 2) -> str:
     """Call OpenAI API to translate text with conversation memory and parallel processing."""
@@ -162,17 +139,11 @@ async def translate_text_parallel(text: str, chat_id: str, retries: int = 2) -> 
     
     for attempt in range(retries + 1):
         try:
-                        # Choose model based on fallback status
-            with model_fallback_lock:
-                models = ["gpt-4o-mini", "gpt-4.1-mini", "gpt-4o-mini-1", "gpt-3.5-turbo"]
-                model_to_use = models[current_model_index]
-                current_index = current_model_index  # Store current index
-            
             # Execute API call in thread pool
             response = await loop.run_in_executor(
                 executor,
                 lambda: openai.chat.completions.create(
-                    model=model_to_use,
+                    model="gpt-4o-mini",
                     messages=messages,
                     temperature=0.1,
                     max_tokens=1000
@@ -184,16 +155,9 @@ async def translate_text_parallel(text: str, chat_id: str, retries: int = 2) -> 
             # Add assistant response to conversation history
             messages.append({"role": "assistant", "content": result})
             
-            # Update conversation memory with new messages
-            with memory_lock:
-                conversation_memory[chat_id]['messages'] = messages
-                conversation_memory[chat_id]['last_used'] = time.time()
-            
             # Keep conversation history manageable (last 10 messages)
             if len(messages) > 11:  # system + 10 exchanges
-                # Keep system message + last 10 exchanges
-                system_msg = messages[0]
-                messages = [system_msg] + messages[-10:]
+                messages[1:] = messages[-10:]  # Keep system message + last 10 exchanges
             
             if result.strip().upper() == "NO_TRANSLATION":
                 print(f"Chat {chat_id}: No translation needed")
@@ -208,35 +172,9 @@ async def translate_text_parallel(text: str, chat_id: str, retries: int = 2) -> 
             
             # Handle rate limit specifically
             if "rate_limit" in error_msg.lower() or "429" in error_msg:
-                if "requests per day" in error_msg.lower() or "rpd" in error_msg.lower():
-                    # Daily rate limit hit - switch to next fallback model
-                    with model_fallback_lock:
-                        if current_model_index < 3:  # Still have fallback models (4 total models: 0,1,2,3)
-                            current_model_index += 1
-                            models = ["gpt-4o-mini", "gpt-4.1-mini", "gpt-4o-mini-1", "gpt-3.5-turbo"]
-                            next_model = models[current_model_index]
-                            print(f"Chat {chat_id}: DAILY rate limit hit! Switching to {next_model} fallback.")
-                            continue
-                        else:
-                            # All models exhausted, wait 1 hour
-                            wait_time = 60 * 60
-                            print(f"Chat {chat_id}: ALL models hit daily limits! Waiting 1 hour.")
-                            await asyncio.sleep(wait_time)
-                            current_model_index = 0  # Reset to first model
-                            continue
-                else:
-                    # Per-minute rate limit
-                    wait_time = 20 + (attempt * 10)  # 20s, 30s, 40s
-                    print(f"Chat {chat_id}: Per-minute rate limit hit, waiting {wait_time}s")
-                    await asyncio.sleep(wait_time)
-            elif "quota" in error_msg.lower() or "billing" in error_msg.lower():
-                # Billing/quota issues
-                print(f"Chat {chat_id}: Billing/quota issue: {error_msg}")
-                return None
-            elif "invalid_api_key" in error_msg.lower():
-                # API key issues
-                print(f"Chat {chat_id}: Invalid API key")
-                return None
+                wait_time = 20 + (attempt * 10)  # 20s, 30s, 40s
+                print(f"Chat {chat_id}: Rate limit hit, waiting {wait_time}s")
+                await asyncio.sleep(wait_time)
             elif attempt < retries:
                 await asyncio.sleep(1 + attempt)  # Progressive backoff
             else:
