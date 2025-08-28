@@ -35,20 +35,85 @@ def needs_translation(text: str) -> bool:
 
 async def translate_text(text: str, retries: int = 2) -> str:
     """Call OpenAI API to translate text or return None if no translation needed."""
-    prompt = f"""Is this text in English or another language? 
 
-Text: "{text}"
+    prompt = f"""
+You are an intelligent translator bot. Your job is to decide if a given text message needs translation into English or not, and then act accordingly.
 
-If it's already in English, respond with: NO_TRANSLATION
-If it's in another language, translate it to English."""
+Rules for your behavior:
+
+1. DO NOT TRANSLATE IF UNNECESSARY
+   - If the text is already in English, respond with: NO_TRANSLATION
+   - If the text is only 1–2 common words that most English speakers understand (like "Hola", "Merci", "Ciao", "Adios", "Danke"), respond with: NO_TRANSLATION
+   - If the text is a proper noun (names of people, places, brands, songs, etc.) and does not require translation, respond with: NO_TRANSLATION
+   - If the text contains mostly emojis or symbols and little/no real words, respond with: NO_TRANSLATION
+
+2. TRANSLATE WHEN NEEDED
+   - If the text is written in a foreign language (non-English) and has enough meaning that an English speaker would benefit from a translation, provide a natural and fluent English translation.
+   - Preserve context and meaning. Do not translate word-for-word if it sounds unnatural. Prioritize readability.
+
+3. MIXED-LANGUAGE TEXT
+   - If a sentence mixes English and another language, only translate the non-English parts and provide a natural English equivalent of the full sentence.
+   - Example: "Estoy happy today" → "I am happy today"
+
+4. KEEP TONE AND INTENT
+   - If the original is polite, casual, or formal, reflect that in English.
+   - Do not add explanations, only the clean translation.
+
+5. OUTPUT FORMAT
+   - If no translation is needed → respond only with: NO_TRANSLATION
+   - If translation is needed → respond only with the translated text in English. Do not include the original text, do not include commentary.
+
+6. SPECIAL CASES
+   - If the text is just random characters, gibberish, or too ambiguous, treat it as NO_TRANSLATION.
+   - If it’s an acronym that is widely understood in English (LOL, ASAP, FIFA, NASA), treat it as NO_TRANSLATION.
+   - If the text is a single borrowed word that is identical or nearly identical in English (pizza, taxi, internet), treat it as NO_TRANSLATION.
+   - ignore short forms of words like "lol", "asap", "fifa", "nasa", "etc."
+
+Examples:
+
+Input: "Hola, ¿cómo estás?"
+Output: "Hello, how are you?"
+
+Input: "Bonjour"
+Output: NO_TRANSLATION
+
+Input: "Ich liebe dich"
+Output: "I love you"
+
+Input: "Gracias amigo"
+Output: "Thank you, my friend"
+
+Input: "Coca-Cola"
+Output: NO_TRANSLATION
+
+Input: "😂😂😂"
+Output: NO_TRANSLATION
+
+Input: "Estoy learning English"
+Output: "I am learning English"
+
+Input: "Adios"
+Output: NO_TRANSLATION
+
+Input: "これは日本語です"
+Output: "This is Japanese"
+
+Input: "Guten Morgen ☀️"
+Output: "Good morning ☀️"
+
+---
+
+Now translate or respond accordingly for this input:
+{text}
+"""
 
     for attempt in range(retries + 1):
         try:
             response = openai.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
-                max_tokens=100  # Limit response length for speed
+                max_tokens=1000
             )
             result = response.choices[0].message.content.strip()
             
@@ -62,7 +127,7 @@ If it's in another language, translate it to English."""
         except Exception as e:
             print(f"OpenAI API error on attempt {attempt + 1}: {e}")
             if attempt < retries:
-                await asyncio.sleep(0.3)  # Reduced wait time
+                await asyncio.sleep(0.3)
             else:
                 print("All translation attempts failed")
     return None  # all attempts failed
