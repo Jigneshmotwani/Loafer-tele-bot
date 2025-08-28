@@ -69,6 +69,8 @@ Rules for your behavior:
    - If it's an acronym that is widely understood in English (LOL, ASAP, FIFA, NASA), treat it as NO_TRANSLATION.
    - If the text is a single borrowed word that is identical or nearly identical in English (pizza, taxi, internet), treat it as NO_TRANSLATION.
    - ignore short forms of words like "lol", "asap", "fifa", "nasa", "etc."
+   
+DO NOT DO LITERAL TRANSLATION. IDENTIFY NAMES OF PEOPLE, PLACES, BRANDS, SONGS, ETC. AND DO NOT TRANSLATE THEM.
 
 Examples:
 
