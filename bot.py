@@ -44,11 +44,14 @@ async def translate_text(text: str, retries: int = 2) -> str:
                 temperature=0.3
             )
             translation = response.choices[0].message.content
-
+            print(f"Translation successful: {translation[:50]}...")
             return translation
         except Exception as e:
             print(f"OpenAI API error on attempt {attempt + 1}: {e}")
-            await asyncio.sleep(1)  # wait before retry
+            if attempt < retries:
+                await asyncio.sleep(1)  # wait before retry
+            else:
+                print("All translation attempts failed")
     return None  # all attempts failed
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -129,20 +132,22 @@ def main():
     PORT = int(os.getenv("PORT", 5000))
     
     print(f"Starting bot on port {PORT}")
+    print(f"WEBHOOK_URL: {WEBHOOK_URL}")
     
-    if WEBHOOK_URL:
-        # Use webhooks for production
-        print(f"Using webhook at {WEBHOOK_URL}")
-        application.run_webhook(
-            listen="0.0.0.0",
-            port=PORT,
-            url_path="",
-            webhook_url=WEBHOOK_URL
-        )
-    else:
-        # Use polling for development
-        print("Using polling mode")
-        application.run_polling(allowed_updates=Update.ALL_TYPES)
+    # For Render deployment, always use webhook mode
+    if not WEBHOOK_URL:
+        # Auto-generate webhook URL for Render
+        WEBHOOK_URL = f"https://loafer-tele-bot.onrender.com"
+        print(f"Auto-generated webhook URL: {WEBHOOK_URL}")
+    
+    # Use webhooks for production
+    print(f"Using webhook at {WEBHOOK_URL}")
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path="",
+        webhook_url=WEBHOOK_URL
+    )
 
 if __name__ == "__main__":
     main()
