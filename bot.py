@@ -50,9 +50,10 @@ Respond with either:
     for attempt in range(retries + 1):
         try:
             response = openai.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-3.5-turbo",
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.1
+                temperature=0.1,
+                max_tokens=100  # Limit response length for speed
             )
             result = response.choices[0].message.content.strip()
             
@@ -66,7 +67,7 @@ Respond with either:
         except Exception as e:
             print(f"OpenAI API error on attempt {attempt + 1}: {e}")
             if attempt < retries:
-                await asyncio.sleep(1)  # wait before retry
+                await asyncio.sleep(0.3)  # Reduced wait time
             else:
                 print("All translation attempts failed")
     return None  # all attempts failed
