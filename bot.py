@@ -74,7 +74,8 @@ Respond with either:
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     user = update.message.from_user.first_name
-    print(f"Received message from {user}: {text}")
+    chat_type = update.message.chat.type
+    print(f"Received message from {user} in {chat_type}: {text}")
 
     if not text or update.message.from_user.is_bot:
         return
@@ -82,7 +83,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Let OpenAI decide if translation is needed
     translation = await translate_text(text)
     if translation:
-        await update.message.reply_text(f"🔹 {user}: {text} ➡️ {translation}")
+        await update.message.reply_text(f"{user}: {text} ➡️ {translation}")
     else:
         print("No translation needed or translation failed")
 
@@ -140,6 +141,11 @@ def main():
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    
+    print("Bot handlers configured:")
+    print("- /start command")
+    print("- /help command") 
+    print("- Text message handler (works in private chats and groups)")
     
     # Get webhook configuration
     WEBHOOK_URL = os.getenv("WEBHOOK_URL")
