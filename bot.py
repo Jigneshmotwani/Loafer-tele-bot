@@ -128,9 +128,11 @@ def main():
     WEBHOOK_URL = os.getenv("WEBHOOK_URL")
     PORT = int(os.getenv("PORT", 5000))
     
+    print(f"Starting bot on port {PORT}")
+    
     if WEBHOOK_URL:
         # Use webhooks for production
-        print(f"Starting bot with webhook at {WEBHOOK_URL}")
+        print(f"Using webhook at {WEBHOOK_URL}")
         application.run_webhook(
             listen="0.0.0.0",
             port=PORT,
@@ -139,7 +141,7 @@ def main():
         )
     else:
         # Use polling for development
-        print("Starting bot with polling (set WEBHOOK_URL for production)")
+        print("Using polling mode")
         application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
