@@ -34,18 +34,35 @@ def needs_translation(text: str) -> bool:
         return False
 
 async def translate_text(text: str, retries: int = 2) -> str:
-    """Call OpenAI API to translate text, with retries on failure."""
-    prompt = f"Translate the following text into natural English, keeping the meaning intact:\n\n{text}"
+    """Call OpenAI API to translate text or return None if no translation needed."""
+    prompt = f"""Analyze this text and decide if it needs translation to English.
+
+If the text is already in English or doesn't need translation, respond with exactly: "NO_TRANSLATION_NEEDED"
+
+If the text is in another language and needs translation, translate it to natural English.
+
+Text: {text}
+
+Respond with either:
+- "NO_TRANSLATION_NEEDED" if no translation is needed
+- The English translation if translation is needed"""
+
     for attempt in range(retries + 1):
         try:
             response = openai.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.3
+                temperature=0.1
             )
-            translation = response.choices[0].message.content
-            print(f"Translation successful: {translation[:50]}...")
-            return translation
+            result = response.choices[0].message.content.strip()
+            
+            if result == "NO_TRANSLATION_NEEDED":
+                print("OpenAI determined no translation needed")
+                return None
+            else:
+                print(f"Translation successful: {result[:50]}...")
+                return result
+                
         except Exception as e:
             print(f"OpenAI API error on attempt {attempt + 1}: {e}")
             if attempt < retries:
@@ -62,15 +79,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not text or update.message.from_user.is_bot:
         return
 
-    if not needs_translation(text):
-        print("No translation needed.")
-        return
-
+    # Let OpenAI decide if translation is needed
     translation = await translate_text(text)
     if translation:
-        await update.message.reply_text(f"🔹 {user} said:\n{text}\n\n➡️ {translation}")
+        await update.message.reply_text(f"🔹 {user}: {text} ➡️ {translation}")
     else:
-        await update.message.reply_text("⚠️ Translation failed. Check logs for details.")
+        print("No translation needed or translation failed")
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command"""
