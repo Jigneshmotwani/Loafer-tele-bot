@@ -15,6 +15,7 @@ if not OPENAI_API_KEY or not TELEGRAM_TOKEN:
 
 openai.api_key = OPENAI_API_KEY
 
+
 # Regex to check if text is Latin letters only (ignores emojis, numbers, etc.)
 LATIN_PATTERN = re.compile(r'^[A-Za-z0-9\s,.\'?!-]+$')
 
@@ -65,12 +66,66 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("⚠️ Translation failed. Check logs for details.")
 
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /start command"""
+    welcome_message = """
+🤖 Welcome to the Auto-Translator Bot!
+
+I automatically detect and translate messages from other languages to English.
+
+Simply send me any message in a foreign language, and I'll translate it for you!
+
+Supported features:
+• Automatic language detection
+• Translation to English
+• Works with Latin alphabet languages
+• Preserves original message context
+
+Start chatting in any language! 🌍
+    """
+    await update.message.reply_text(welcome_message)
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /help command"""
+    help_text = """
+📖 How to use this bot:
+
+1. Send any message in a foreign language
+2. I'll automatically detect if it needs translation
+3. If it does, I'll reply with both the original and English translation
+
+Examples of supported languages:
+• Spanish: "Hola, ¿cómo estás?"
+• French: "Bonjour, comment allez-vous?"
+• German: "Guten Tag, wie geht es Ihnen?"
+• Italian: "Ciao, come stai?"
+• Portuguese: "Olá, como você está?"
+
+Commands:
+/start - Welcome message
+/help - This help message
+
+Note: I work best with Latin alphabet languages.
+    """
+    await update.message.reply_text(help_text)
+
+def main():
+    """Start the bot"""
+    print("Starting Auto-Translator Bot...")
+    
+    # Create application
+    application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    
+    # Add handlers
+    application.add_handler(MessageHandler(filters.COMMAND & filters.Regex("^/start"), start_command))
+    application.add_handler(MessageHandler(filters.COMMAND & filters.Regex("^/help"), help_command))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    
+    # Start polling
+    print("Bot is running... Press Ctrl+C to stop")
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
+
 if __name__ == "__main__":
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    main()
 
-    PORT = int(os.environ.get("PORT", 5000))
-    print(f"Starting bot. Listening on port {PORT}...")
 
-    # Using polling for simplicity; switch to run_webhook in production
-    app.run_polling()
