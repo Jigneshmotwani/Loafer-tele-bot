@@ -157,27 +157,38 @@ async def translate_text_parallel(text: str, chat_id: str, retries: int = 2) -> 
     return None
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    user = update.message.from_user.first_name
-    chat_type = update.message.chat.type
-    chat_id = str(update.message.chat.id)
-    
-    print(f"Received message from {user} in {chat_type} (chat_id: {chat_id}): {text}")
-
-    if not text or update.message.from_user.is_bot:
-        return
-
-    # Process translation in parallel without blocking
-    translation_task = asyncio.create_task(translate_text_parallel(text, chat_id))
-    
     try:
-        translation = await translation_task
-        if translation:
-            await update.message.reply_text(f"{user}: {text} ➡️ {translation}")
-        else:
-            print(f"Chat {chat_id}: No translation needed or translation failed")
+        # Check if message exists and has text
+        if not update.message or not update.message.text:
+            return
+        
+        text = update.message.text
+        user = update.message.from_user.first_name if update.message.from_user else "Unknown"
+        chat_type = update.message.chat.type
+        chat_id = str(update.message.chat.id)
+        
+        print(f"Received message from {user} in {chat_type} (chat_id: {chat_id}): {text}")
+
+        if not text or update.message.from_user.is_bot:
+            return
+
+        # Process translation in parallel without blocking
+        translation_task = asyncio.create_task(translate_text_parallel(text, chat_id))
+        
+        try:
+            translation = await translation_task
+            if translation:
+                await update.message.reply_text(f"{user}: {text} ➡️ {translation}")
+            else:
+                print(f"Chat {chat_id}: No translation needed or translation failed")
+        except Exception as e:
+            print(f"Chat {chat_id}: Error processing translation: {e}")
+            
     except Exception as e:
-        print(f"Chat {chat_id}: Error processing message: {e}")
+        print(f"Error in handle_message: {e}")
+        # Log the full error for debugging
+        import traceback
+        traceback.print_exc()
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command"""
@@ -222,6 +233,12 @@ Note: I work best with Latin alphabet languages.
     """
     await update.message.reply_text(help_text)
 
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle errors gracefully."""
+    print(f"An error occurred: {context.error}")
+    import traceback
+    traceback.print_exc()
+
 def main():
     """Start the bot"""
     print("Starting Optimized Auto-Translator Bot...")
@@ -234,6 +251,9 @@ def main():
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    
+    # Add error handler
+    application.add_error_handler(error_handler)
     
     print("Bot handlers configured:")
     print("- /start command")
